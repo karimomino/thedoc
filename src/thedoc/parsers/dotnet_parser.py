@@ -1,23 +1,86 @@
 """Parser for .NET documentation comments."""
 
 import re
-from typing import Dict, List, Optional, Any
 import xml.etree.ElementTree as ET
+from typing import Dict, List, Optional, Any, Set
 from pathlib import Path
 
-class DotNetParser:
+from .base import BaseParser, DocItem
+
+class DotNetParser(BaseParser):
     """Parser for .NET documentation comments."""
 
-    def __init__(self):
+    def __init__(self, root_path: Path = None):
         """Initialize the parser."""
-        # Pattern to match complete XML documentation blocks
-        self.doc_block_pattern = re.compile(
-            r'///\s*<(class|method|property|enum|interface|type)[^>]*>.*?</\1>',
-            re.DOTALL
-        )
+        if root_path:
+            super().__init__(root_path)
+        
+        # Pattern to match XML doc comments in C# code
+        self.doc_pattern = re.compile(r'///.*?(?=\n(?!\s*///))|<(?:class|interface|method|property|enum|type)[\s\S]*?</(?:class|interface|method|property|enum|type)>', re.DOTALL)
 
-    def parse_file(self, file_path: str) -> Dict:
+    def get_file_extensions(self) -> List[str]:
+        """Get .NET file extensions."""
+        return ['.cs', '.vb']
+
+    def parse_file(self, file_path: Path) -> List[DocItem]:
         """Parse a .NET source file and extract documentation.
+
+        Args:
+            file_path: Path to the source file
+
+        Returns:
+            List of documentation items
+        """
+        # Convert Path to string if needed
+        if isinstance(file_path, Path):
+            file_path_str = str(file_path)
+        else:
+            file_path_str = file_path
+        
+        # Get the parsed dict from the original method
+        doc_dict = self._parse_file_to_dict(file_path_str)
+        
+        # Convert to DocItem list
+        doc_items = []
+        
+        # Process each section in the documentation dictionary
+        for section_type, items in doc_dict.items():
+            for item in items:
+                # Map the item type based on section name
+                if section_type == 'classes':
+                    item_type = 'class'
+                elif section_type == 'methods':
+                    item_type = 'function'
+                elif section_type == 'properties':
+                    item_type = 'property'
+                elif section_type == 'enums':
+                    item_type = 'enum'
+                elif section_type == 'interfaces':
+                    item_type = 'interface'
+                elif section_type == 'types':
+                    item_type = 'type'
+                else:
+                    item_type = 'unknown'
+                
+                # Create DocItem from the dictionary entry
+                doc_item = DocItem(
+                    name=item.get('name', 'Unknown'),
+                    type=item_type,
+                    description=item.get('description', ''),
+                    signature=item.get('signature', None),
+                    params=item.get('params', {}),
+                    returns=item.get('returns', None),
+                    examples=item.get('examples', []),
+                    source_file=file_path_str,
+                    line_number=None  # .NET parser doesn't track line numbers
+                )
+                
+                doc_items.append(doc_item)
+        
+        return doc_items
+
+    def _parse_file_to_dict(self, file_path: str) -> Dict:
+        """Parse a .NET source file and extract documentation as a dictionary.
 
         Args:
             file_path: Path to the source file
@@ -28,24 +91,12 @@ class DotNetParser:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Join all lines that start with /// to form complete blocks
-        lines = content.split('\n')
-        current_block = []
-        doc_blocks = []
-        
-        for line in lines:
-            if line.strip().startswith('///'):
-                # Remove /// and leading/trailing whitespace
-                clean_line = re.sub(r'^\s*///\s*', '', line)
-                current_block.append(clean_line)
-            elif current_block:
-                # End of a documentation block
-                doc_blocks.append('\n'.join(current_block))
-                current_block = []
-        
-        if current_block:
-            doc_blocks.append('\n'.join(current_block))
-        
+        # Convert triple-slash comments to XML format
+        content = self._convert_triple_slash_to_xml(content)
+
+        # Find all XML documentation blocks
+        doc_blocks = self.doc_pattern.findall(content)
+
         documentation = {
             'classes': [],
             'methods': [],
@@ -79,230 +130,203 @@ class DotNetParser:
                 continue
 
         return documentation
-
-    def _get_element_text(self, root: ET.Element, tag: str, default: str = '') -> str:
-        """Get text content of an XML element.
-
-        Args:
-            root: Root XML element
-            tag: Tag name to find
-            default: Default value if tag not found
-
-        Returns:
-            Text content of the element or default value
-        """
-        elem = root.find(tag)
-        if elem is None:
-            return default
         
-        # Handle special formatting tags
-        text_parts = []
-        for child in elem:
-            if child.tag == 'para':
-                text_parts.append(child.text.strip() if child.text else '')
-            elif child.tag == 'c':
-                text_parts.append(f"`{child.text}`" if child.text else '')
-            elif child.tag == 'code':
-                text_parts.append(f"```\n{child.text}\n```" if child.text else '')
-            elif child.tag == 'list':
-                text_parts.append(self._parse_list(child))
-            elif child.tag == 'paramref':
-                text_parts.append(f"`{child.get('name', '')}`")
-            elif child.tag == 'typeparamref':
-                text_parts.append(f"`{child.get('name', '')}`")
-            elif child.tag == 'see':
-                text_parts.append(self._parse_see_tag(child))
-            elif child.tag == 'inheritdoc':
-                text_parts.append("[Inherited documentation]")
-            elif child.tag == 'include':
-                text_parts.append(f"[Included from: {child.get('file', '')}]")
+    def _convert_triple_slash_to_xml(self, content: str) -> str:
+        """Convert triple slash comments to XML format.
+        
+        Args:
+            content: The source file content
+            
+        Returns:
+            Source with triple slash comments converted to XML
+        """
+        lines = content.split('\n')
+        
+        # Find all triple slash comment blocks
+        i = 0
+        result = []
+        while i < len(lines):
+            line = lines[i]
+            
+            # If this is a triple slash comment
+            if line.strip().startswith('///'):
+                # Start collecting comment block
+                comment_lines = []
+                while i < len(lines) and lines[i].strip().startswith('///'):
+                    # Remove /// and leading space if present
+                    comment_line = lines[i].strip()[3:].strip()
+                    comment_lines.append(comment_line)
+                    i += 1
+                
+                # Find what this comment is documenting
+                if i < len(lines):
+                    next_line = lines[i]
+                    
+                    # Determine the type of element (class, method, etc.)
+                    xml_tag = 'type'  # Default tag
+                    if 'class ' in next_line:
+                        xml_tag = 'class'
+                    elif 'interface ' in next_line:
+                        xml_tag = 'interface'
+                    elif 'enum ' in next_line:
+                        xml_tag = 'enum'
+                    elif 'void ' in next_line or ' => ' in next_line or ' return ' in next_line:
+                        xml_tag = 'method'
+                    elif 'property ' in next_line or 'get;' in next_line or 'set;' in next_line:
+                        xml_tag = 'property'
+                    
+                    # Extract the name
+                    name_match = re.search(r'\b([A-Za-z0-9_]+)\b(?=\s*[(:{\s]|$)', next_line)
+                    name = name_match.group(1) if name_match else 'Unknown'
+                    
+                    # Convert comment to XML
+                    xml = f"<{xml_tag} name=\"{name}\">\n"
+                    
+                    # Handle summary separately
+                    summary_lines = []
+                    other_lines = []
+                    
+                    for cline in comment_lines:
+                        if cline.startswith('<param') or cline.startswith('<returns') or cline.startswith('<exception'):
+                            other_lines.append(cline)
+                        else:
+                            summary_lines.append(cline)
+                    
+                    if summary_lines:
+                        xml += "<summary>\n"
+                        xml += "\n".join(summary_lines)
+                        xml += "\n</summary>\n"
+                    
+                    # Add other elements
+                    xml += "\n".join(other_lines)
+                    
+                    xml += f"\n</{xml_tag}>"
+                    
+                    result.append(xml)
+                    result.append(next_line)
+                else:
+                    # End of file after comment
+                    result.extend(comment_lines)
             else:
-                text_parts.append(child.text.strip() if child.text else '')
+                result.append(line)
+                i += 1
+                
+        return '\n'.join(result)
+    
+    def _parse_class(self, element: ET.Element) -> Dict[str, Any]:
+        """Parse a class documentation element.
         
-        if not text_parts and elem.text:
-            text_parts.append(elem.text.strip())
+        Args:
+            element: The XML element containing class documentation
+            
+        Returns:
+            Dictionary with parsed class documentation
+        """
+        result = {
+            'name': element.get('name', 'Unknown'),
+            'description': '',
+            'params': {},
+            'examples': []
+        }
         
-        return ' '.join(text_parts) if text_parts else default
-
-    def _get_element_list(self, root: ET.Element, tag: str) -> List[Dict[str, Any]]:
-        """Get list of elements with their attributes and content.
-
-        Args:
-            root: Root XML element
-            tag: Tag name to find
-
-        Returns:
-            List of dictionaries containing element attributes and content
-        """
-        elements = []
-        for elem in root.findall(tag):
-            element_data = {
-                'text': self._get_element_text(elem, '.'),
-                'attributes': elem.attrib
-            }
-            elements.append(element_data)
-        return elements
-
-    def _parse_list(self, list_elem: ET.Element) -> str:
-        """Parse a list element.
-
-        Args:
-            list_elem: List XML element
-
-        Returns:
-            Formatted list as string
-        """
-        list_type = list_elem.get('type', 'bullet')
-        items = []
-        for item in list_elem.findall('item'):
-            term = item.find('term')
-            description = item.find('description')
-            if term is not None and description is not None:
-                items.append(f"{term.text}: {description.text}")
-            else:
-                items.append(item.text.strip() if item.text else '')
+        # Get summary
+        summary = element.find('summary')
+        if summary is not None:
+            result['description'] = ''.join(summary.itertext()).strip()
         
-        if list_type == 'number':
-            return '\n'.join(f"{i+1}. {item}" for i, item in enumerate(items))
-        else:
-            return '\n'.join(f"* {item}" for item in items)
-
-    def _parse_see_tag(self, see_elem: ET.Element) -> str:
-        """Parse a see tag.
-
-        Args:
-            see_elem: See XML element
-
-        Returns:
-            Formatted reference as string
-        """
-        cref = see_elem.get('cref', '')
-        href = see_elem.get('href', '')
-        text = see_elem.text.strip() if see_elem.text else ''
+        # Get examples
+        examples = element.findall('example')
+        for example in examples:
+            result['examples'].append(''.join(example.itertext()).strip())
         
-        if cref:
-            return f"[{text or cref}]({cref})"
-        elif href:
-            return f"[{text or href}]({href})"
-        return text
-
-    def _parse_class(self, root: ET.Element) -> Dict:
-        """Parse class documentation.
-
+        return result
+    
+    def _parse_method(self, element: ET.Element) -> Dict[str, Any]:
+        """Parse a method documentation element.
+        
         Args:
-            root: Root XML element
-
+            element: The XML element containing method documentation
+            
         Returns:
-            Dict containing class documentation
+            Dictionary with parsed method documentation
         """
-        return {
-            'name': root.get('name', ''),
-            'summary': self._get_element_text(root, 'summary'),
-            'remarks': self._get_element_text(root, 'remarks'),
-            'example': self._get_element_text(root, 'example'),
-            'see_also': self._get_element_list(root, 'seealso'),
-            'type_params': self._get_element_list(root, 'typeparam'),
-            'inheritance': self._get_element_text(root, 'inheritdoc'),
-            'includes': self._get_element_list(root, 'include')
+        result = {
+            'name': element.get('name', 'Unknown'),
+            'description': '',
+            'params': {},
+            'returns': None,
+            'examples': []
         }
-
-    def _parse_method(self, root: ET.Element) -> Dict:
-        """Parse method documentation.
-
-        Args:
-            root: Root XML element
-
-        Returns:
-            Dict containing method documentation
-        """
-        return {
-            'name': root.get('name', ''),
-            'summary': self._get_element_text(root, 'summary'),
-            'parameters': self._get_element_list(root, 'param'),
-            'returns': self._get_element_text(root, 'returns'),
-            'exceptions': self._get_element_list(root, 'exception'),
-            'remarks': self._get_element_text(root, 'remarks'),
-            'example': self._get_element_text(root, 'example'),
-            'type_params': self._get_element_list(root, 'typeparam'),
-            'see_also': self._get_element_list(root, 'seealso'),
-            'inheritance': self._get_element_text(root, 'inheritdoc'),
-            'includes': self._get_element_list(root, 'include')
+        
+        # Get summary
+        summary = element.find('summary')
+        if summary is not None:
+            result['description'] = ''.join(summary.itertext()).strip()
+        
+        # Get parameters
+        params = element.findall('param')
+        for param in params:
+            name = param.get('name', 'unknown')
+            description = ''.join(param.itertext()).strip()
+            result['params'][name] = description
+        
+        # Get return value
+        returns = element.find('returns')
+        if returns is not None:
+            result['returns'] = ''.join(returns.itertext()).strip()
+        
+        # Get examples
+        examples = element.findall('example')
+        for example in examples:
+            result['examples'].append(''.join(example.itertext()).strip())
+        
+        return result
+    
+    def _parse_property(self, element: ET.Element) -> Dict[str, Any]:
+        """Parse a property documentation element."""
+        result = {
+            'name': element.get('name', 'Unknown'),
+            'description': '',
+            'examples': []
         }
-
-    def _parse_property(self, root: ET.Element) -> Dict:
-        """Parse property documentation.
-
-        Args:
-            root: Root XML element
-
-        Returns:
-            Dict containing property documentation
-        """
+        
+        # Get summary
+        summary = element.find('summary')
+        if summary is not None:
+            result['description'] = ''.join(summary.itertext()).strip()
+        
+        # Get examples
+        examples = element.findall('example')
+        for example in examples:
+            result['examples'].append(''.join(example.itertext()).strip())
+        
+        return result
+    
+    def _parse_enum(self, element: ET.Element) -> Dict[str, Any]:
+        """Parse an enum documentation element."""
         return {
-            'name': root.get('name', ''),
-            'summary': self._get_element_text(root, 'summary'),
-            'value': self._get_element_text(root, 'value'),
-            'remarks': self._get_element_text(root, 'remarks'),
-            'example': self._get_element_text(root, 'example'),
-            'see_also': self._get_element_list(root, 'seealso'),
-            'inheritance': self._get_element_text(root, 'inheritdoc'),
-            'includes': self._get_element_list(root, 'include')
+            'name': element.get('name', 'Unknown'),
+            'description': self._get_summary_text(element),
+            'values': {}  # TODO: Extract enum values if needed
         }
-
-    def _parse_enum(self, root: ET.Element) -> Dict:
-        """Parse enum documentation.
-
-        Args:
-            root: Root XML element
-
-        Returns:
-            Dict containing enum documentation
-        """
+    
+    def _parse_interface(self, element: ET.Element) -> Dict[str, Any]:
+        """Parse an interface documentation element."""
         return {
-            'name': root.get('name', ''),
-            'summary': self._get_element_text(root, 'summary'),
-            'remarks': self._get_element_text(root, 'remarks'),
-            'values': self._get_element_list(root, 'value'),
-            'see_also': self._get_element_list(root, 'seealso'),
-            'inheritance': self._get_element_text(root, 'inheritdoc'),
-            'includes': self._get_element_list(root, 'include')
+            'name': element.get('name', 'Unknown'),
+            'description': self._get_summary_text(element)
         }
-
-    def _parse_interface(self, root: ET.Element) -> Dict:
-        """Parse interface documentation.
-
-        Args:
-            root: Root XML element
-
-        Returns:
-            Dict containing interface documentation
-        """
+    
+    def _parse_type(self, element: ET.Element) -> Dict[str, Any]:
+        """Parse a type documentation element."""
         return {
-            'name': root.get('name', ''),
-            'summary': self._get_element_text(root, 'summary'),
-            'remarks': self._get_element_text(root, 'remarks'),
-            'example': self._get_element_text(root, 'example'),
-            'type_params': self._get_element_list(root, 'typeparam'),
-            'see_also': self._get_element_list(root, 'seealso'),
-            'inheritance': self._get_element_text(root, 'inheritdoc'),
-            'includes': self._get_element_list(root, 'include')
+            'name': element.get('name', 'Unknown'),
+            'description': self._get_summary_text(element)
         }
-
-    def _parse_type(self, root: ET.Element) -> Dict:
-        """Parse type documentation.
-
-        Args:
-            root: Root XML element
-
-        Returns:
-            Dict containing type documentation
-        """
-        return {
-            'name': root.get('name', ''),
-            'summary': self._get_element_text(root, 'summary'),
-            'remarks': self._get_element_text(root, 'remarks'),
-            'type_params': self._get_element_list(root, 'typeparam'),
-            'see_also': self._get_element_list(root, 'seealso'),
-            'inheritance': self._get_element_text(root, 'inheritdoc'),
-            'includes': self._get_element_list(root, 'include')
-        } 
+    
+    def _get_summary_text(self, element: ET.Element) -> str:
+        """Get the summary text from an element."""
+        summary = element.find('summary')
+        if summary is not None:
+            return ''.join(summary.itertext()).strip()
+        return '' 

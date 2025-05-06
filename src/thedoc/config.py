@@ -1,13 +1,14 @@
 """Configuration management for TheDoc."""
 
 import os
+import yaml
 from pathlib import Path
 from typing import Dict, Any
 
 DEFAULT_CONFIG = {
     "project_name": "",
     "output_dir": "docs",
-    "mkdocs_dir": "mkdocs",
+    "docs_dir": "",  # This is the directory within output_dir for markdown files; empty means root of output_dir
     "exclude_patterns": [
         "*.pyc",
         "__pycache__",
@@ -36,11 +37,23 @@ def load_config() -> Dict[str, Any]:
     if not config_path.exists():
         return DEFAULT_CONFIG.copy()
     
-    # TODO: Implement YAML config loading
-    return DEFAULT_CONFIG.copy()
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            
+        # Merge with defaults to ensure all keys exist
+        merged_config = DEFAULT_CONFIG.copy()
+        merged_config.update(config)
+        return merged_config
+    except Exception as e:
+        print(f"Error loading config: {e}")
+        return DEFAULT_CONFIG.copy()
 
 def save_config(config: Dict[str, Any]) -> None:
     """Save configuration to file."""
     config_path = get_config_path()
-    # TODO: Implement YAML config saving
-    pass 
+    try:
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False)
+    except Exception as e:
+        print(f"Error saving config: {e}") 

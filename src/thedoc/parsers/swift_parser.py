@@ -4,11 +4,17 @@ import re
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 
-class SwiftParser:
+from .base import BaseParser, DocItem
+
+class SwiftParser(BaseParser):
     """Parser for Swift documentation comments."""
 
-    def __init__(self):
+    def __init__(self, root_path: Path = None):
         """Initialize the parser."""
+        # Initialize base class if root_path is provided
+        if root_path:
+            super().__init__(root_path)
+        
         # Pattern to match Swift doc comments and the following code
         self.doc_pattern = re.compile(
             r'///.*?(?=\n(?!///)|$)|/\*\*.*?\*/',
@@ -61,8 +67,67 @@ class SwiftParser:
             'type': 'types'
         }
 
-    def parse_file(self, file_path: str) -> Dict:
+    def get_file_extensions(self) -> List[str]:
+        """Get Swift file extensions."""
+        return ['.swift']
+
+    def parse_file(self, file_path: Path) -> List[DocItem]:
         """Parse a Swift source file and extract documentation.
+
+        Args:
+            file_path: Path to the source file
+
+        Returns:
+            List of documentation items
+        """
+        # Convert Path to string if needed
+        if isinstance(file_path, Path):
+            file_path_str = str(file_path)
+        else:
+            file_path_str = file_path
+            
+        # Get the parsed dict from the original method
+        doc_dict = self._parse_file_to_dict(file_path_str)
+        
+        # Convert to DocItem list
+        doc_items = []
+        
+        # Process each section in the documentation dictionary
+        for section_type, items in doc_dict.items():
+            for item in items:
+                # Map the item type based on section name
+                if section_type == 'classes':
+                    item_type = 'class'
+                elif section_type == 'functions':
+                    item_type = 'function'
+                elif section_type == 'properties':
+                    item_type = 'property'
+                elif section_type == 'enums':
+                    item_type = 'enum'
+                elif section_type == 'cases':
+                    item_type = 'case'
+                else:
+                    item_type = 'unknown'
+                
+                # Create DocItem from the dictionary entry
+                doc_item = DocItem(
+                    name=item.get('name', 'Unknown'),
+                    type=item_type,
+                    description=item.get('description', ''),
+                    signature=item.get('signature', None),
+                    params=item.get('params', {}),
+                    returns=item.get('returns', None),
+                    examples=item.get('examples', []),
+                    source_file=file_path_str,
+                    line_number=None  # Swift parser doesn't track line numbers
+                )
+                
+                doc_items.append(doc_item)
+        
+        return doc_items
+        
+    def _parse_file_to_dict(self, file_path: str) -> Dict:
+        """Parse a Swift source file and extract documentation as a dictionary.
 
         Args:
             file_path: Path to the source file
