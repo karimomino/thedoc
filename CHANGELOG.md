@@ -1,3 +1,12 @@
+# v0.1.1 (2023-05-06)
+
+## Documentation
+
+* Add clear work-in-progress indicators to README
+* Add development status badge
+* Link to roadmap from README
+* Clearly indicate alpha status
+
 # v0.1.0 (2023-05-06)
 
 ## Features
