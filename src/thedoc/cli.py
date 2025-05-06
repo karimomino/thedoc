@@ -16,14 +16,11 @@ def init():
     """Initialize TheDoc in the current project."""
     click.echo("Initializing TheDoc...")
     
-    # Get project name
     project_name = click.prompt("Project name", default="")
     
-    # Create config with project name
     config = DEFAULT_CONFIG.copy()
     config["project_name"] = project_name
     
-    # Save config
     save_config(config)
     
     click.echo("TheDoc initialized successfully.")
@@ -33,13 +30,10 @@ def generate():
     """Generate documentation for the project."""
     click.echo("Generating documentation...")
     
-    # Get current directory
     project_path = Path.cwd()
     
-    # Create generator
     generator = MkDocsGenerator(project_path)
     
-    # Generate documentation
     generator.generate()
 
 @main.command()
@@ -53,7 +47,6 @@ def build():
     """Build MkDocs documentation site."""
     click.echo("Building documentation site...")
     
-    # Get docs directory from config
     config = load_config()
     docs_dir = Path.cwd() / config["output_dir"]
     
@@ -62,7 +55,6 @@ def build():
         click.echo("Run 'thedoc generate' first to generate documentation.")
         return
     
-    # Run mkdocs build
     import subprocess
     try:
         subprocess.run(["mkdocs", "build"], cwd=docs_dir, check=True)
@@ -77,7 +69,6 @@ def serve():
     """Start the MkDocs development server."""
     click.echo("Starting documentation server...")
     
-    # Get docs directory from config
     config = load_config()
     docs_dir = Path.cwd() / config["output_dir"]
     
@@ -86,7 +77,6 @@ def serve():
         click.echo("Run 'thedoc generate' first to generate documentation.")
         return
     
-    # Run mkdocs serve
     import subprocess
     try:
         subprocess.run(["mkdocs", "serve"], cwd=docs_dir, check=True)

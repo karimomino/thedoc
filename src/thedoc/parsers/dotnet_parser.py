@@ -15,7 +15,6 @@ class DotNetParser(BaseParser):
         if root_path:
             super().__init__(root_path)
         
-        # Pattern to match XML doc comments in C# code
         self.doc_pattern = re.compile(r'///.*?(?=\n(?!\s*///))|<(?:class|interface|method|property|enum|type)[\s\S]*?</(?:class|interface|method|property|enum|type)>', re.DOTALL)
 
     def get_file_extensions(self) -> List[str]:
@@ -31,22 +30,17 @@ class DotNetParser(BaseParser):
         Returns:
             List of documentation items
         """
-        # Convert Path to string if needed
         if isinstance(file_path, Path):
             file_path_str = str(file_path)
         else:
             file_path_str = file_path
         
-        # Get the parsed dict from the original method
         doc_dict = self._parse_file_to_dict(file_path_str)
         
-        # Convert to DocItem list
         doc_items = []
         
-        # Process each section in the documentation dictionary
         for section_type, items in doc_dict.items():
             for item in items:
-                # Map the item type based on section name
                 if section_type == 'classes':
                     item_type = 'class'
                 elif section_type == 'methods':
@@ -62,7 +56,6 @@ class DotNetParser(BaseParser):
                 else:
                     item_type = 'unknown'
                 
-                # Create DocItem from the dictionary entry
                 doc_item = DocItem(
                     name=item.get('name', 'Unknown'),
                     type=item_type,
@@ -72,7 +65,7 @@ class DotNetParser(BaseParser):
                     returns=item.get('returns', None),
                     examples=item.get('examples', []),
                     source_file=file_path_str,
-                    line_number=None  # .NET parser doesn't track line numbers
+                    line_number=None
                 )
                 
                 doc_items.append(doc_item)
@@ -91,10 +84,8 @@ class DotNetParser(BaseParser):
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Convert triple-slash comments to XML format
         content = self._convert_triple_slash_to_xml(content)
 
-        # Find all XML documentation blocks
         doc_blocks = self.doc_pattern.findall(content)
 
         documentation = {
@@ -108,10 +99,8 @@ class DotNetParser(BaseParser):
 
         for block in doc_blocks:
             try:
-                # Parse the XML content
                 root = ET.fromstring(block)
                 
-                # Process based on the root tag
                 if root.tag == 'class':
                     documentation['classes'].append(self._parse_class(root))
                 elif root.tag == 'method':
@@ -142,28 +131,23 @@ class DotNetParser(BaseParser):
         """
         lines = content.split('\n')
         
-        # Find all triple slash comment blocks
         i = 0
         result = []
         while i < len(lines):
             line = lines[i]
             
-            # If this is a triple slash comment
             if line.strip().startswith('///'):
-                # Start collecting comment block
                 comment_lines = []
                 while i < len(lines) and lines[i].strip().startswith('///'):
-                    # Remove /// and leading space if present
                     comment_line = lines[i].strip()[3:].strip()
                     comment_lines.append(comment_line)
                     i += 1
                 
-                # Find what this comment is documenting
+
                 if i < len(lines):
                     next_line = lines[i]
                     
-                    # Determine the type of element (class, method, etc.)
-                    xml_tag = 'type'  # Default tag
+                    xml_tag = 'type'
                     if 'class ' in next_line:
                         xml_tag = 'class'
                     elif 'interface ' in next_line:
@@ -175,14 +159,11 @@ class DotNetParser(BaseParser):
                     elif 'property ' in next_line or 'get;' in next_line or 'set;' in next_line:
                         xml_tag = 'property'
                     
-                    # Extract the name
                     name_match = re.search(r'\b([A-Za-z0-9_]+)\b(?=\s*[(:{\s]|$)', next_line)
                     name = name_match.group(1) if name_match else 'Unknown'
                     
-                    # Convert comment to XML
                     xml = f"<{xml_tag} name=\"{name}\">\n"
                     
-                    # Handle summary separately
                     summary_lines = []
                     other_lines = []
                     
@@ -197,7 +178,6 @@ class DotNetParser(BaseParser):
                         xml += "\n".join(summary_lines)
                         xml += "\n</summary>\n"
                     
-                    # Add other elements
                     xml += "\n".join(other_lines)
                     
                     xml += f"\n</{xml_tag}>"
@@ -205,7 +185,6 @@ class DotNetParser(BaseParser):
                     result.append(xml)
                     result.append(next_line)
                 else:
-                    # End of file after comment
                     result.extend(comment_lines)
             else:
                 result.append(line)
@@ -229,12 +208,10 @@ class DotNetParser(BaseParser):
             'examples': []
         }
         
-        # Get summary
         summary = element.find('summary')
         if summary is not None:
             result['description'] = ''.join(summary.itertext()).strip()
         
-        # Get examples
         examples = element.findall('example')
         for example in examples:
             result['examples'].append(''.join(example.itertext()).strip())
@@ -258,24 +235,20 @@ class DotNetParser(BaseParser):
             'examples': []
         }
         
-        # Get summary
         summary = element.find('summary')
         if summary is not None:
             result['description'] = ''.join(summary.itertext()).strip()
         
-        # Get parameters
         params = element.findall('param')
         for param in params:
             name = param.get('name', 'unknown')
             description = ''.join(param.itertext()).strip()
             result['params'][name] = description
         
-        # Get return value
         returns = element.find('returns')
         if returns is not None:
             result['returns'] = ''.join(returns.itertext()).strip()
         
-        # Get examples
         examples = element.findall('example')
         for example in examples:
             result['examples'].append(''.join(example.itertext()).strip())
@@ -290,12 +263,10 @@ class DotNetParser(BaseParser):
             'examples': []
         }
         
-        # Get summary
         summary = element.find('summary')
         if summary is not None:
             result['description'] = ''.join(summary.itertext()).strip()
         
-        # Get examples
         examples = element.findall('example')
         for example in examples:
             result['examples'].append(''.join(example.itertext()).strip())
@@ -307,7 +278,7 @@ class DotNetParser(BaseParser):
         return {
             'name': element.get('name', 'Unknown'),
             'description': self._get_summary_text(element),
-            'values': {}  # TODO: Extract enum values if needed
+            'values': {}
         }
     
     def _parse_interface(self, element: ET.Element) -> Dict[str, Any]:

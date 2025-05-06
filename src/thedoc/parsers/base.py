@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 class DocItem:
     """Represents a documentation item."""
     name: str
-    type: str  # 'class', 'function', 'module', etc.
+    type: str
     description: str
     signature: Optional[str] = None
     params: Dict[str, str] = None

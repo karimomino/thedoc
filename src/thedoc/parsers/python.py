@@ -22,7 +22,6 @@ class PythonParser(BaseParser):
         try:
             tree = ast.parse(content)
             items = self._parse_module(tree, str(file_path))
-            # Filter out None items
             return [item for item in items if item is not None]
         except SyntaxError:
             print(f"Error parsing {file_path}: Invalid Python syntax")
@@ -32,7 +31,6 @@ class PythonParser(BaseParser):
         """Parse an AST module node."""
         items = []
         
-        # Get module docstring
         module_doc = ast.get_docstring(tree)
         if module_doc:
             items.append(DocItem(
@@ -43,7 +41,6 @@ class PythonParser(BaseParser):
                 line_number=1
             ))
 
-        # Parse all top-level nodes
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 items.extend(self._parse_class(node, file_path))
@@ -58,7 +55,6 @@ class PythonParser(BaseParser):
         """Parse a class definition."""
         items = []
 
-        # Class documentation
         class_doc = ast.get_docstring(node)
         if class_doc:
             items.append(DocItem(
@@ -69,7 +65,6 @@ class PythonParser(BaseParser):
                 line_number=node.lineno
             ))
 
-        # Parse methods
         for item in node.body:
             if isinstance(item, ast.FunctionDef):
                 method = self._parse_function(item, file_path, is_method=True)
@@ -85,7 +80,6 @@ class PythonParser(BaseParser):
         if not doc:
             return None
 
-        # Parse function signature
         args = []
         for arg in node.args.args:
             args.append(arg.arg)
@@ -97,7 +91,6 @@ class PythonParser(BaseParser):
 
         signature = f"{node.name}({', '.join(args)})"
 
-        # Parse docstring for parameters and return value
         params: Dict[str, str] = {}
         returns: Optional[str] = None
         examples: List[str] = []
@@ -112,7 +105,7 @@ class PythonParser(BaseParser):
         for line in lines:
             line = line.strip()
             if line.lower().startswith('args:') or line.lower().startswith('parameters:'):
-                current_section = []  # Start collecting parameters
+                current_section = []
                 in_example = False
             elif line.lower().startswith('returns:'):
                 returns = line[8:].strip()
@@ -121,19 +114,16 @@ class PythonParser(BaseParser):
                 in_example = True
                 current_example = []
             elif line and ':' in line and not in_example and current_section != description:
-                # Parameter definition
                 param, desc = line.split(':', 1)
                 params[param.strip()] = desc.strip()
             elif line and in_example:
                 current_example.append(line)
             elif not line and in_example and current_example:
-                # End of an example
                 examples.append('\n'.join(current_example))
                 current_example = []
             elif line and not in_example:
                 current_section.append(line)
         
-        # Add the last example if there is one
         if current_example:
             examples.append('\n'.join(current_example))
 

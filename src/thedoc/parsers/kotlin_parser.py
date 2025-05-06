@@ -14,13 +14,11 @@ class KotlinParser(BaseParser):
         if root_path:
             super().__init__(root_path)
         
-        # Pattern to match KDoc comments and the following code
         self.doc_pattern = re.compile(
             r'/\*\*.*?\*/\s*([^\n]*)',
             re.DOTALL
         )
         
-        # Patterns for different KDoc tags
         self.tag_patterns = {
             'param': r'@param\s+(\w+)\s+([^\n@]*)',
             'return': r'@return\s+([^\n@]*)',
@@ -32,7 +30,6 @@ class KotlinParser(BaseParser):
             'sample': r'@sample\s+([^\n@]*)',
         }
         
-        # Patterns for Kotlin code elements
         self.code_patterns = {
             'class': re.compile(r'(?:public|private|internal|protected)?\s*(?:data|sealed|open|abstract)?\s*class\s+(\w+)'),
             'function': re.compile(r'(?:public|private|internal|protected)?\s*fun\s+(\w+)'),
@@ -55,22 +52,17 @@ class KotlinParser(BaseParser):
         Returns:
             List of documentation items
         """
-        # Convert Path to string if needed
         if isinstance(file_path, Path):
             file_path_str = str(file_path)
         else:
             file_path_str = file_path
         
-        # Get the parsed dict from the original method
         doc_dict = self._parse_file_to_dict(file_path_str)
         
-        # Convert to DocItem list
         doc_items = []
         
-        # Process each section in the documentation dictionary
         for section_type, items in doc_dict.items():
             for item in items:
-                # Map the item type based on section name
                 if section_type == 'classes':
                     item_type = 'class'
                 elif section_type == 'functions':
@@ -86,7 +78,6 @@ class KotlinParser(BaseParser):
                 else:
                     item_type = 'unknown'
                 
-                # Create DocItem from the dictionary entry
                 doc_item = DocItem(
                     name=item.get('name', 'Unknown'),
                     type=item_type,
@@ -96,7 +87,7 @@ class KotlinParser(BaseParser):
                     returns=item.get('returns', None),
                     examples=item.get('examples', []),
                     source_file=file_path_str,
-                    line_number=None  # Kotlin parser doesn't track line numbers
+                    line_number=None
                 )
                 
                 doc_items.append(doc_item)
@@ -124,23 +115,19 @@ class KotlinParser(BaseParser):
             'objects': []
         }
 
-        # Find all KDoc comment blocks with the following code
         matches = self.doc_pattern.finditer(content)
 
         for match in matches:
             doc_comment = match.group(0)
             code_line = match.group(1) if len(match.groups()) > 0 else ""
             
-            # Parse the documentation comment
             doc_block = self._parse_doc_block(doc_comment)
             
-            # Determine the type of code element
             element_type, name = self._detect_code_element(code_line)
             
             if element_type and name:
                 doc_block['name'] = name
                 
-                # Add to the appropriate section
                 if element_type == 'class':
                     documentation['classes'].append(doc_block)
                 elif element_type == 'function':
@@ -165,15 +152,12 @@ class KotlinParser(BaseParser):
         Returns:
             Dictionary with parsed documentation
         """
-        # Remove comment markers
         doc_text = re.sub(r'/\*\*|\*/|^\s*\*', '', doc_text, flags=re.MULTILINE)
         doc_text = re.sub(r'^\s*', '', doc_text, flags=re.MULTILINE)
         
-        # Extract main description (everything before the first @tag)
         description_match = re.search(r'^(.*?)(?=@|$)', doc_text, re.DOTALL)
         description = description_match.group(1).strip() if description_match else ""
         
-        # Initialize documentation block
         doc_block = {
             'description': description,
             'params': {},
@@ -182,19 +166,16 @@ class KotlinParser(BaseParser):
             'examples': []
         }
         
-        # Extract @param tags
         param_matches = re.finditer(self.tag_patterns['param'], doc_text)
         for match in param_matches:
             param_name = match.group(1)
             param_desc = match.group(2).strip()
             doc_block['params'][param_name] = param_desc
         
-        # Extract @return tag
         return_match = re.search(self.tag_patterns['return'], doc_text)
         if return_match:
             doc_block['returns'] = return_match.group(1).strip()
         
-        # Extract @throws and @exception tags
         throws_matches = re.finditer(self.tag_patterns['throws'], doc_text)
         for match in throws_matches:
             exception_type = match.group(1)
@@ -207,7 +188,6 @@ class KotlinParser(BaseParser):
             exception_desc = match.group(2).strip()
             doc_block['throws'][exception_type] = exception_desc
         
-        # Extract @sample tag for examples
         sample_matches = re.finditer(self.tag_patterns['sample'], doc_text)
         for match in sample_matches:
             doc_block['examples'].append(match.group(1).strip())

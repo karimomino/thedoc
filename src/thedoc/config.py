@@ -8,7 +8,7 @@ from typing import Dict, Any
 DEFAULT_CONFIG = {
     "project_name": "",
     "output_dir": "docs",
-    "docs_dir": "",  # This is the directory within output_dir for markdown files; empty means root of output_dir
+    "docs_dir": "",
     "exclude_patterns": [
         "*.pyc",
         "__pycache__",
@@ -41,7 +41,6 @@ def load_config() -> Dict[str, Any]:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
             
-        # Merge with defaults to ensure all keys exist
         merged_config = DEFAULT_CONFIG.copy()
         merged_config.update(config)
         return merged_config
