@@ -1,5 +1,7 @@
 # TheDoc
 
+[![PyPI version](https://badge.fury.io/py/thedoc.svg)](https://badge.fury.io/py/thedoc)
+
 A powerful documentation generation tool that works with any programming language. TheDoc automatically generates comprehensive documentation and release notes based on conventional commits, with seamless MkDocs integration for beautiful web documentation.
 
 ## Features
@@ -38,6 +40,19 @@ thedoc release-notes
 ```bash
 thedoc build
 ```
+
+5. Serve MkDocs site locally:
+```bash
+thedoc serve
+```
+
+## Supported Languages
+
+TheDoc currently supports parsing documentation from:
+- Python (docstrings)
+- Swift (documentation comments)
+- Kotlin (KDoc)
+- .NET (XML documentation comments for C# and VB)
 
 ## Development
 
