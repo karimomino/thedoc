@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "thedoc"
-version = "0.1.0"
+version = "0.1.1"
 description = "A omni-documentation generation tool that works with any programming language, I hope"
 readme = "README.md"
 requires-python = ">=3.8"
