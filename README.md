@@ -5,6 +5,7 @@
 
 > **🚧 WORK IN PROGRESS 🚧**  
 > This project is currently under active development and is not yet feature-complete. Structure may change, features may be added or removed, and documentation may be incomplete. This will be worked on on my free time, so there are no clear timelines for anything.
+
 A powerful documentation generation tool that works with most major programming language. TheDoc automatically generates comprehensive documentation and release notes based on conventional commits and doc comments, with seamless MkDocs integration for beautiful web documentation.
 
 ## Development Status
